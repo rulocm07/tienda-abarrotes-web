@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Tienda de Abarrotes - Simulador de Compras</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; }
+        .header { background: #232f3e; color: white; padding: 20px; text-align: center; position: sticky; top: 0; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-top: 20px; }
+        .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; }
+        .controls { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 10px; }
+        .controls button { padding: 5px 15px; font-size: 16px; cursor: pointer; }
+        .checkout-btn { margin-top: 20px; padding: 15px 30px; background: #28a745; color: white; border: none; font-size: 18px; cursor: pointer; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Tienda de Abarrotes</h1>
+        <h2>Total a Pagar: $<span id="total">0.00</span></h2>
+        <button class="checkout-btn" onclick="realizarCompra()">Confirmar Venta</button>
+    </div>
+
+    <div class="grid" id="productos-container">
+        <!-- Las tarjetas de productos se cargarán dinámicamente desde el backend -->
+    </div>
+
+    <script>
+        let productosData = [];
+        let carrito = {}; // Estructura: { id_producto: cantidad }
+
+        // Cargar productos al iniciar
+        async function cargarProductos() {
+            const res = await fetch('http://localhost:3000/api/productos');
+            productosData = await res.json();
+            renderizarProductos();
+        }
+
+        function renderizarProductos() {
+            const container = document.getElementById('productos-container');
+            container.innerHTML = '';
+
+            productosData.forEach(p => {
+                carrito[p.id_producto] = carrito[p.id_producto] || 0;
+
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <h3>${p.nombre}</h3>
+                    <p>Precio: $${parseFloat(p.precio).toFixed(2)}</p>
+                    <p>Stock: ${p.stock}</p>
+                    <div class="controls">
+                        <button onclick="cambiarCantidad(${p.id_producto}, -1)">-</button>
+                        <span id="cant-${p.id_producto}">${carrito[p.id_producto]}</span>
+                        <button onclick="cambiarCantidad(${p.id_producto}, 1, ${p.stock})">+</button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function cambiarCantidad(id, cambio, maxStock) {
+            let actual = carrito[id] || 0;
+            let nuevo = actual + cambio;
+
+            if (nuevo < 0) nuevo = 0;
+            if (maxStock !== undefined && nuevo > maxStock) nuevo = maxStock;
+
+            carrito[id] = nuevo;
+            document.getElementById(`cant-${id}`).innerText = nuevo;
+            calcularTotal();
+        }
+
+        function calcularTotal() {
+            let total = 0;
+            productosData.forEach(p => {
+                const cant = carrito[p.id_producto] || 0;
+                total += cant * parseFloat(p.precio);
+            });
+            document.getElementById('total').innerText = total.toFixed(2);
+        }
+
+        async function realizarCompra() {
+            const items = [];
+            let total = 0;
+
+            productosData.forEach(p => {
+                const cant = carrito[p.id_producto] || 0;
+                if (cant > 0) {
+                    items.push({
+                        id_producto: p.id_producto,
+                        cantidad: cant,
+                        precio_unitario: p.precio
+                    });
+                    total += cant * parseFloat(p.precio);
+                }
+            });
+
+            if (items.length === 0) {
+                alert('Selecciona al menos un producto.');
+                return;
+            }
+
+            const response = await fetch('http://localhost:3000/api/ventas', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items, total })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert('¡Venta realizada con éxito! ID Venta: ' + data.id_venta);
+                carrito = {};
+                cargarProductos(); // Recargar para actualizar stock y limpiar
+                document.getElementById('total').innerText = '0.00';
+            } else {
+                alert('Error al procesar la venta.');
+            }
+        }
+
+        // Inicializar
+        cargarProductos();
+    </script>
+</body>
+</html>
